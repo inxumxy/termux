@@ -1,0 +1,24 @@
+RewriteEngine On
+RewriteBase /
+
+# Allow access to bots directory
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# PHP settings
+php_value upload_max_filesize 10M
+php_value post_max_size 10M
+php_value memory_limit 128M
+php_value max_execution_time 60
+
+# Security headers
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "SAMEORIGIN"
+Header set X-XSS-Protection "1; mode=block"
+
+# Disable directory browsing
+Options -Indexes
+
+# Error pages
+ErrorDocument 403 "403 Forbidden"
+ErrorDocument 404 "404 Not Found"
