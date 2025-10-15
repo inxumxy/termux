@@ -418,20 +418,21 @@ function callGeminiAPI($messages, $system_prompt = '') {
 }
 
 function createBotWithAI($user_id, $bot_num, $user_request, $bot_token, $chat_id, $message_id) {
-    // Update progress
-    editMessage($chat_id, $message_id, "⏳ <b>Thinking...</b>\n\nSo'rovingiz tahlil qilinyapti...");
-    
-    $bot_dir = BOTS_DIR . $user_id . '/' . $bot_num;
-    if (!file_exists($bot_dir)) mkdir($bot_dir, 0755, true);
-    
-    $index_file = $bot_dir . '/index.php';
-    $log_file = $bot_dir . '/log.txt';
-    
-    // Get AI history
-    $history = getAIHistory($user_id, $bot_num);
-    
-    // System prompt for NONOCHA BOT
-    $system_prompt = "Siz NONOCHA BOT nomli yordamchi AI dasturchi assistentisiz. Sizning vazifangiz foydalanuvchiga Telegram bot yaratishda yordam berish. Siz faqat PHP tilida kod yozasiz (procedural PHP, OOP emas). Sizning yaratadigan botlaringiz quyidagi talablarga javob berishi kerak:
+    try {
+        // Update progress
+        editMessage($chat_id, $message_id, "⏳ <b>Thinking...</b>\n\nSo'rovingiz tahlil qilinyapti...");
+        
+        $bot_dir = BOTS_DIR . $user_id . '/' . $bot_num;
+        if (!file_exists($bot_dir)) mkdir($bot_dir, 0755, true);
+        
+        $index_file = $bot_dir . '/index.php';
+        $log_file = $bot_dir . '/log.txt';
+        
+        // Get AI history
+        $history = getAIHistory($user_id, $bot_num);
+        
+        // System prompt for NONOCHA BOT
+        $system_prompt = "Siz NONOCHA BOT nomli yordamchi AI dasturchi assistentisiz. Sizning vazifangiz foydalanuvchiga Telegram bot yaratishda yordam berish. Siz faqat PHP tilida kod yozasiz (procedural PHP, OOP emas). Sizning yaratadigan botlaringiz quyidagi talablarga javob berishi kerak:
 
 1. Faqat bitta index.php fayliga yozing
 2. vendor/autoload.php ishlatmang
@@ -443,47 +444,65 @@ function createBotWithAI($user_id, $bot_num, $user_request, $bot_token, $chat_id
 8. Webhook bilan ishlash uchun kod yozing
 
 Agar kod xatosi bo'lsa, log.txt ni o'qib xatoni toping va tuzating. Har doim to'liq ishlaydigan kod yozing.";
-    
-    // Add user request to history
-    $history[] = ['role' => 'user', 'content' => $user_request];
-    
-    editMessage($chat_id, $message_id, "⏳ <b>Kod yozilyapti...</b>\n\nAI agent sizning botingizni yaratyapti...");
-    
-    // Call Gemini API
-    $ai_response = callGeminiAPI($history, $system_prompt);
-    
-    // Add AI response to history
-    $history[] = ['role' => 'assistant', 'content' => $ai_response];
-    saveAIHistory($user_id, $bot_num, $history);
-    
-    editMessage($chat_id, $message_id, "⏳ <b>Fayl yaratilyapti...</b>\n\nKod faylga yozilyapti...");
-    
-    // Extract PHP code from response
-    $code = '';
-    if (preg_match('/```php\s*(.*?)\s*```/s', $ai_response, $matches)) {
-        $code = $matches[1];
-    } elseif (preg_match('/```\s*(.*?)\s*```/s', $ai_response, $matches)) {
-        $code = $matches[1];
-    } else {
-        $code = $ai_response;
+        
+        // Add user request to history
+        $history[] = ['role' => 'user', 'content' => $user_request];
+        
+        editMessage($chat_id, $message_id, "⏳ <b>Kod yozilyapti...</b>\n\nAI agent sizning botingizni yaratyapti...");
+        
+        // Call Gemini API
+        $ai_response = callGeminiAPI($history, $system_prompt);
+        
+        // Add AI response to history
+        $history[] = ['role' => 'assistant', 'content' => $ai_response];
+        saveAIHistory($user_id, $bot_num, $history);
+        
+        editMessage($chat_id, $message_id, "⏳ <b>Fayl yaratilyapti...</b>\n\nKod faylga yozilyapti...");
+        
+        // Extract PHP code from response
+        $code = '';
+        if (preg_match('/```php\s*(.*?)\s*```/s', $ai_response, $matches)) {
+            $code = $matches[1];
+        } elseif (preg_match('/```\s*(.*?)\s*```/s', $ai_response, $matches)) {
+            $code = $matches[1];
+        } else {
+            $code = $ai_response;
+        }
+        
+        // Ensure code starts with <?php
+        if (strpos(trim($code), '<?php') !== 0) {
+            $code = "<?php\n" . $code;
+        }
+        
+        // Write code to file
+        file_put_contents($index_file, $code);
+        file_put_contents($log_file, "Bot yaratildi: " . date('Y-m-d H:i:s') . "\n");
+        
+        editMessage($chat_id, $message_id, "⏳ <b>Webhook o'rnatilmoqda...</b>\n\nBotingiz faollashtirilmoqda...");
+        
+        // Set webhook - AUTO-DETECT DOMAIN
+        $current_domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'yourdomain.com';
+        $webhook_url = "https://{$current_domain}/bots/{$user_id}/{$bot_num}/index.php";
+        $webhook_result = setWebhook($bot_token, $webhook_url);
+        
+        // Return result
+        return [
+            'success' => true,
+            'bot_num' => $bot_num,
+            'webhook_status' => isset($webhook_result['ok']) ? $webhook_result['ok'] : false,
+            'ai_response' => $ai_response,
+            'webhook_url' => $webhook_url
+        ];
+        
+    } catch (Exception $e) {
+        // Log error
+        file_put_contents(__DIR__ . '/bot_error.log', date('Y-m-d H:i:s') . ' - AI Error: ' . $e->getMessage() . "\n", FILE_APPEND);
+        
+        return [
+            'success' => false,
+            'error' => $e->getMessage()
+        ];
     }
-    
-    // Ensure code starts with <?php
-    if (strpos(trim($code), '<?php') !== 0) {
-        $code = "<?php\n" . $code;
-    }
-    
-    // Write code to file
-    file_put_contents($index_file, $code);
-    file_put_contents($log_file, "Bot yaratildi: " . date('Y-m-d H:i:s') . "\n");
-    
-    editMessage($chat_id, $message_id, "⏳ <b>Webhook o'rnatilmoqda...</b>\n\nBotingiz faollashtirilmoqda...");
-    
-    // Set webhook (assuming we have a webhook URL)
-    $webhook_url = "https://yourdomain.com/bots/{$user_id}/{$bot_num}/index.php";
-    setWebhook($bot_token, $webhook_url);
-    
-    editMessage($chat_id, $message_id, "✅ <b>Bot muvaffaqiyatli yaratildi!</b>\n\n📁 Fayl: user_{$user_id}/bot_{$bot_num}/index.php\n\n💬 AI javobi:\n" . substr($ai_response, 0, 500) . "...", getMainMenu());
 }
 
 // ============================================
@@ -663,17 +682,40 @@ if (isset($update['message'])) {
             // Send thinking message
             $thinking_msg = sendMessage($chat_id, "⏳ <b>AI Agent ishga tushmoqda...</b>");
             
-            // Create bot with AI
-            createBotWithAI($user_id, $bot_num, $text, $user['temp_data']['ai_bot_token'], $chat_id, $thinking_msg['result']['message_id']);
+            if (!isset($thinking_msg['result']['message_id'])) {
+                sendMessage($chat_id, "❌ Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
+                exit;
+            }
             
-            // Save bot to user's list
-            $user['bots'][] = [
-                'bot_num' => $bot_num,
-                'token' => $user['temp_data']['ai_bot_token'],
-                'username' => $user['temp_data']['ai_bot_username'],
-                'created_at' => time(),
-                'type' => 'ai'
-            ];
+            // Create bot with AI
+            $result = createBotWithAI($user_id, $bot_num, $text, $user['temp_data']['ai_bot_token'], $chat_id, $thinking_msg['result']['message_id']);
+            
+            if ($result['success']) {
+                // Save bot to user's list
+                $user['bots'][] = [
+                    'bot_num' => $bot_num,
+                    'token' => $user['temp_data']['ai_bot_token'],
+                    'username' => $user['temp_data']['ai_bot_username'],
+                    'created_at' => time(),
+                    'type' => 'ai'
+                ];
+                
+                // Prepare success message
+                $success_msg = "✅ <b>Bot muvaffaqiyatli yaratildi!</b>\n\n";
+                $success_msg .= "🤖 Bot: @{$user['temp_data']['ai_bot_username']}\n";
+                $success_msg .= "📁 Fayl: bots/{$user_id}/{$bot_num}/index.php\n";
+                $success_msg .= "🌐 Webhook: " . ($result['webhook_status'] ? '✅ O\'rnatildi' : '❌ Xatolik') . "\n";
+                $success_msg .= "🔗 URL: {$result['webhook_url']}\n\n";
+                $ai_preview = function_exists('mb_substr') ? mb_substr($result['ai_response'], 0, 350) : substr($result['ai_response'], 0, 350);
+                $success_msg .= "💬 <b>AI javobi:</b>\n" . $ai_preview . "...";
+                
+                editMessage($chat_id, $thinking_msg['result']['message_id'], $success_msg, getMainMenu());
+            } else {
+                $error_msg = "❌ <b>Bot yaratishda xatolik!</b>\n\n";
+                $error_msg .= "Xatolik: " . (isset($result['error']) ? $result['error'] : 'Noma\'lum xatolik');
+                
+                editMessage($chat_id, $thinking_msg['result']['message_id'], $error_msg, getMainMenu());
+            }
             
             $user['state'] = '';
             $user['temp_data'] = [];
@@ -908,8 +950,9 @@ if (isset($update['message'])) {
             // Save file
             file_put_contents($bot_dir . '/index.php', $file_content);
             
-            // Set webhook
-            $webhook_url = "https://yourdomain.com/bots/{$user_id}/{$bot_num}/index.php";
+            // Set webhook - AUTO-DETECT DOMAIN
+            $current_domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'localhost';
+            $webhook_url = "https://{$current_domain}/bots/{$user_id}/{$bot_num}/index.php";
             setWebhook($bot_token, $webhook_url);
             
             // Save bot
@@ -1151,7 +1194,7 @@ if (isset($update['callback_query'])) {
         }
         
         $tariff_limits = $settings['tariffs'][$user['tariff']];
-        $msg .= "\n📊 {$bot_num}/{$tariff_limits['bots']} botlar";
+        $msg .= "\n📊 " . count($user['bots']) . "/{$tariff_limits['bots']} botlar";
         
         $keyboard['inline_keyboard'][] = [
             ['text' => '🔙 Orqaga', 'callback_data' => 'main_menu']
@@ -1588,8 +1631,9 @@ if (isset($update['callback_query'])) {
         // Save file
         file_put_contents($bot_dir . '/index.php', $file_content);
         
-        // Set webhook
-        $webhook_url = "https://yourdomain.com/bots/{$user_id}/{$bot_num}/index.php";
+        // Set webhook - AUTO-DETECT DOMAIN
+        $current_domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'localhost';
+        $webhook_url = "https://{$current_domain}/bots/{$user_id}/{$bot_num}/index.php";
         setWebhook($bot_token, $webhook_url);
         
         // Save bot
