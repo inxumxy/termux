@@ -1,0 +1,34 @@
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+*.txt
+logs/
+
+# User files
+users/
+
+# Config
+config.php
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+cache/
+
+# Sensitive
+.env
